@@ -113,9 +113,7 @@ shor_code_913=np.array([
         dtype=int,
     )
 
-import numpy as np
 
-import numpy as np
 
 def steane_code_713():
 
