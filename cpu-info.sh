@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=cpu-info
-#SBATCH --partition=small72
+#SBATCH --partition=debug
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --time=00:02:00
@@ -14,7 +14,7 @@ echo "Hostname: $(hostname)"
 echo "Job ID: $SLURM_JOB_ID"
 echo "Partition: $SLURM_JOB_PARTITION"
 echo "Node list: $SLURM_JOB_NODELIST"
-echo "CPUs on node: $SLURM_CPUS_ON_NODE"
+echo "Allocated CPUs: $SLURM_CPUS_ON_NODE"
 
 echo
 echo "===== CPU Affinity ====="
