@@ -1,9 +1,9 @@
 #!/bin/bash
 #SBATCH --job-name=cpu-info
-#SBATCH --partition=debug
+#SBATCH --partition=small72
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --time=00:02:00
+#SBATCH --time=1-00:01:00
 #SBATCH --error=cpu-info.%J.err
 #SBATCH --output=cpu-info.%J.out
 
