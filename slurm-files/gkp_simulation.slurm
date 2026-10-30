@@ -6,6 +6,8 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=48
 #SBATCH --time=01:00:00
+#SBATCH --mail-user=pritamghosh1@iisc.ac.in
+#SBATCH --mail-type=BEGIN,END,FAIL
 #SBATCH --output=logs/gkp_%j.out
 #SBATCH --error=logs/gkp_%j.err
 
