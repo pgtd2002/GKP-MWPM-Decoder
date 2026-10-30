@@ -429,7 +429,7 @@ def parse_args():
         type=int,
         nargs="+",
         default=[i for i in range(6, 32, 2)],  # d = 6 to 30 inclusive
-        help="Code distances to simulate (default: 6 8 ... 32)",
+        help="Code distances to simulate (default: 6 8 ... 30)",
     )
     parser.add_argument(
         "--num-trials",
