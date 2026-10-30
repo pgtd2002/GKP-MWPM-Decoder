@@ -428,7 +428,7 @@ def parse_args():
         "--distances",
         type=int,
         nargs="+",
-        default=[i for i in range(6, 34, 2)],  # d = 6 to 32 inclusive
+        default=[i for i in range(6, 32, 2)],  # d = 6 to 30 inclusive
         help="Code distances to simulate (default: 6 8 ... 32)",
     )
     parser.add_argument(
