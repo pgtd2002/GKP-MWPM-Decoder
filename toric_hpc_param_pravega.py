@@ -49,8 +49,14 @@ def get_slurm_topology():
     Detects multi-node SLURM rank and total participating nodes.
     Defaults to (0, 1) when run standalone on a single node.
     """
-    rank = int(os.environ.get("SLURM_PROCID", 0))
-    world_size = int(os.environ.get("SLURM_NTASKS", 1))
+    # A direct Python invocation represents one process.
+    # Multi-node execution must be launched using srun.
+    if "SLURM_PROCID" not in os.environ:
+        return 0, 1
+
+    rank = int(os.environ["SLURM_PROCID"])
+    world_size = int(os.environ["SLURM_NTASKS"])
+
     return rank, world_size
 
 
