@@ -268,7 +268,7 @@ def run_trial_chunk(args):
         current_batch = min(batch_size, num_trials - start_idx)
 
         # 1. Generate analog Gaussian phase-space noise: shape (dim, current_batch)
-        xi = rng.normal(loc=0.0, scale=sigma, size=(dim, current_batch))
+        xi = rng.standard_normal(size=(dim, current_batch)) * sigma
 
         # 2. Compute GKP syndrome s and target vector t_batch
         if use_dense:
@@ -280,17 +280,19 @@ def run_trial_chunk(args):
 
         # 3. Repackage into C-contiguous layout for C++ PyMatching batch decode
         t_batch_T = np.ascontiguousarray(t_batch.T)
-        cp_batch = decoder.decode_analog_batch(t_batch_T)
+        cp_batch_T = decoder.decode_analog_batch(t_batch_T)
+        cp_batch = cp_batch_T.T
 
-        # 4. Compute residual error and verify stabilizer lattice membership
-        residual_error = xi - cp_batch.T * SQRT_PI
+        # 4. Exact Chamberland Verification (Version 2 math)
+        residual_error = xi - t_batch + cp_batch
+        effective_error = np.rint(residual_error * INV_SQRT_PI) * SQRT_PI
 
         if use_dense:
-            z = M_inv_T_scaled.dot(residual_error)
+            z = M_inv_T_scaled.dot(effective_error)
         else:
-            z = splu_M.solve(residual_error, trans="T") * INV_SQRT_2PI
+            z = splu_M.solve(effective_error, trans="T") * INV_SQRT_2PI
 
-        is_lattice = np.max(np.abs(z - np.round(z)), axis=0) < 1e-4
+        is_lattice = np.max(np.abs(z - np.rint(z)), axis=0) < 1e-4
         success_count += int(np.sum(is_lattice))
 
     return success_count
