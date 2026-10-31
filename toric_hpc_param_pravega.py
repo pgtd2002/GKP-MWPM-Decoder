@@ -204,52 +204,45 @@ def prepare_distance_context(distance, folder_prefix):
 # =====================================================================
 # 4. NUMA-PINNED WORKER INITIALIZATION & HYBRID FAST-PATH ENGINE
 # =====================================================================
+def get_physical_cpu_ids():
+    """Discovers physical CPUs actually permitted by SLURM's cgroup mask on this node."""
+    try:
+        allowed = sorted(os.sched_getaffinity(0))
+        physical_cpus = []
+        seen_cores = set()
+        for cpu in allowed:
+            topo = Path(f"/sys/devices/system/cpu/cpu{cpu}/topology")
+            if topo.exists():
+                pkg_id = int((topo / "physical_package_id").read_text().strip())
+                core_id = int((topo / "core_id").read_text().strip())
+                key = (pkg_id, core_id)
+                if key not in seen_cores:
+                    seen_cores.add(key)
+                    physical_cpus.append(cpu)
+            else:
+                physical_cpus.append(cpu)
+        return physical_cpus if physical_cpus else allowed
+    except Exception:
+        return list(range(48))
+
+
 def init_worker(context, worker_counter):
     from threadpoolctl import threadpool_limits
     from scipy.sparse.linalg import splu
 
     threadpool_limits(limits=1)
 
-    # 1. Pin worker to a dedicated physical core (0-23 on NUMA 0, 24-47 on NUMA 1)
-    # Strictly avoids SMT hyperthreads 48-71 and 72-95!
     with worker_counter.get_lock():
-        core_id = worker_counter.value
+        worker_id = worker_counter.value
         worker_counter.value += 1
 
+    # Safely pin to SLURM-assigned physical cores (catches both AttributeError and OSError)
     try:
-        os.sched_setaffinity(0, {core_id % 48})
-    except AttributeError:
-        pass  # Safe fallback on macOS / non-Linux systems
-
-    # 2. First-Touch NUMA Allocation: build C++ & Sparse objects AFTER CPU pinning
-    # so Linux allocates all pages on this socket's local DDR4 memory controller.
-    _WORKER.clear()
-    dim = context["dim"]
-    _WORKER["dim"] = dim
-    _WORKER["decoder"] = GKPSurfaceDecoder(context["G"])
-
-    if dim < 1200:
-        # 100% Dense AVX-512 Fast-Path for small lattices (e.g., d=6)
-        _WORKER["use_dense"] = True
-        M_dense = context["M_csc"].toarray()
-        M_inv = np.linalg.inv(M_dense)
-        Omega_dense = context["Omega_csr"].toarray()
-
-        _WORKER["A_dense"] = np.ascontiguousarray(context["A_csr"].toarray(), dtype=np.float64)
-        # Fuse Omega @ M_inv * INV_SQRT_2PI into a single dense matrix B_dense
-        _WORKER["B_dense"] = np.ascontiguousarray(
-            (Omega_dense @ M_inv) * INV_SQRT_2PI, dtype=np.float64
-        )
-        # Fuse M_inv.T * INV_SQRT_2PI into a single dense matrix for verification
-        _WORKER["M_inv_T_scaled"] = np.ascontiguousarray(
-            M_inv.T * INV_SQRT_2PI, dtype=np.float64
-        )
-    else:
-        # Sparse SuperLU Path for d >= 8 up to d = 32
-        _WORKER["use_dense"] = False
-        _WORKER["A_csr"] = context["A_csr"]
-        _WORKER["Omega_csr"] = context["Omega_csr"]
-        _WORKER["splu_M"] = splu(context["M_csc"])
+        physical_cpus = get_physical_cpu_ids()
+        target_cpu = physical_cpus[worker_id % len(physical_cpus)]
+        os.sched_setaffinity(0, {target_cpu})
+    except (AttributeError, OSError):
+        pass
 
 
 def run_trial_chunk(args):
