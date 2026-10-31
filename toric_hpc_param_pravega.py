@@ -49,14 +49,11 @@ def get_slurm_topology():
     Detects multi-node SLURM rank and total participating nodes.
     Defaults to (0, 1) when run standalone on a single node.
     """
-    # A direct Python invocation represents one process.
-    # Multi-node execution must be launched using srun.
     if "SLURM_PROCID" not in os.environ:
         return 0, 1
 
     rank = int(os.environ["SLURM_PROCID"])
-    world_size = int(os.environ["SLURM_NTASKS"])
-
+    world_size = int(os.environ.get("SLURM_NTASKS", 1))
     return rank, world_size
 
 
@@ -123,6 +120,10 @@ def get_system_l3_cache_bytes():
 
 
 def get_optimal_batch_size(dim, num_workers):
+    """
+    Calculates L2/L3-optimal batch size while dynamically scaling bounds
+    so high-genus (g > 13, d = 32) runs never overflow 192 GB node RAM.
+    """
     total_l3_bytes = get_system_l3_cache_bytes()
     worker_cache_slice = (total_l3_bytes / num_workers) * 0.75
     bytes_per_trial = 5 * dim * 8
@@ -231,13 +232,41 @@ def init_worker(context, worker_counter):
         worker_id = worker_counter.value
         worker_counter.value += 1
 
-    # Safely pin to SLURM-assigned physical cores (catches both AttributeError and OSError)
+    # 1. Safely pin to SLURM-assigned physical cores (catches both AttributeError and OSError)
     try:
         physical_cpus = get_physical_cpu_ids()
         target_cpu = physical_cpus[worker_id % len(physical_cpus)]
         os.sched_setaffinity(0, {target_cpu})
     except (AttributeError, OSError):
         pass
+
+    # 2. First-Touch NUMA Allocation: build C++ & Sparse objects AFTER CPU pinning
+    # so Linux allocates all pages on this socket's local DDR4 memory controller.
+    _WORKER.clear()
+    dim = context["dim"]
+    _WORKER["dim"] = dim
+    _WORKER["decoder"] = GKPSurfaceDecoder(context["G"])
+
+    if dim < 1200:
+        # 100% Dense AVX-512 Fast-Path for small lattices (e.g., d=6)
+        _WORKER["use_dense"] = True
+        M_dense = context["M_csc"].toarray()
+        M_inv = np.linalg.inv(M_dense)
+        Omega_dense = context["Omega_csr"].toarray()
+
+        _WORKER["A_dense"] = np.ascontiguousarray(context["A_csr"].toarray(), dtype=np.float64)
+        _WORKER["B_dense"] = np.ascontiguousarray(
+            (Omega_dense @ M_inv) * INV_SQRT_2PI, dtype=np.float64
+        )
+        _WORKER["M_inv_T_scaled"] = np.ascontiguousarray(
+            M_inv.T * INV_SQRT_2PI, dtype=np.float64
+        )
+    else:
+        # Sparse SuperLU Path for d >= 8 up to d = 32
+        _WORKER["use_dense"] = False
+        _WORKER["A_csr"] = context["A_csr"]
+        _WORKER["Omega_csr"] = context["Omega_csr"]
+        _WORKER["splu_M"] = splu(context["M_csc"])
 
 
 def run_trial_chunk(args):
@@ -277,7 +306,7 @@ def run_trial_chunk(args):
         cp_batch_T = decoder.decode_analog_batch(t_batch_T)
         cp_batch = cp_batch_T.T
 
-        # 4. Exact Chamberland Verification (Version 2 math)
+        # 4. Exact Chamberland Verification
         residual_error = xi - t_batch + cp_batch
         effective_error = np.rint(residual_error * INV_SQRT_PI) * SQRT_PI
 
