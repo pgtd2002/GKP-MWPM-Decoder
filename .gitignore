@@ -10,6 +10,11 @@
 /dataSources.local.xml
 
 /.idea/
+.vscode/
 
 /results/
+slurm-files/logs/
+
+*.tmp
+*.log
 
