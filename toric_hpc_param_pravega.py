@@ -123,27 +123,22 @@ def get_system_l3_cache_bytes():
 
 
 def get_optimal_batch_size(dim, num_workers):
-    """
-    Calculates L3-optimal batch size while dynamically scaling bounds
-    so high-genus (g > 13, d = 32) runs never overflow 192 GB node RAM.
-    """
     total_l3_bytes = get_system_l3_cache_bytes()
     worker_cache_slice = (total_l3_bytes / num_workers) * 0.75
     bytes_per_trial = 5 * dim * 8
     optimal_batch = int(worker_cache_slice // bytes_per_trial)
 
     if dim < 1500:
-        # Small lattice (e.g., d=6): large batch amortizes Python-to-C++ call overhead
-        return max(2000, min(10000, optimal_batch))
+        return max(400, min(1000, optimal_batch))
     elif dim < 8000:
-        # Medium lattice (d=8..14): balanced cache fit
-        return max(400, min(4000, optimal_batch))
+        return max(250, min(1000, optimal_batch))
     elif dim < 20000:
-        # Large lattice (d=16..24): keep working set inside L2/L3 cache
-        return max(150, min(1000, optimal_batch))
+        return max(128, min(500, optimal_batch))
+    elif dim < 30000:
+        return max(64, min(250, optimal_batch))
     else:
-        # Extreme lattice (g > 13, d=26..32, dim >= 20,000): protect 192 GB RAM & cache
-        return max(64, min(400, optimal_batch))
+        # Ultra-high genus (g >= 15, d >= 30, dim >= 30,000)
+        return max(32, min(128, optimal_batch))
 
 
 # =====================================================================
