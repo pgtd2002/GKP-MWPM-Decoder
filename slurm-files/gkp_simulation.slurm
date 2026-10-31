@@ -1,11 +1,11 @@
 #!/bin/bash
 #SBATCH --job-name=gkp_toric
-#SBATCH --partition=debug
-#SBATCH --nodes=11
-#SBATCH --ntasks=11
+#SBATCH --partition=large
+#SBATCH --nodes=425
+#SBATCH --ntasks=425
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=48
-#SBATCH --time=01:00:00
+#SBATCH --time=1-00:00:00
 #SBATCH --mail-user=pritamghosh1@iisc.ac.in
 #SBATCH --mail-type=BEGIN,END,FAIL
 #SBATCH --output=logs/gkp_%j.out
@@ -72,9 +72,9 @@ fi
 srun --ntasks="${SLURM_NTASKS}" --ntasks-per-node=1 --cpus-per-task="${SLURM_CPUS_PER_TASK}" \
     python -u "${SIM_SCRIPT}" \
     --num-trials 100000000 \
-    --seed 461266 \
+    --seed 46123643166 \
     --workers "${SLURM_CPUS_PER_TASK}" \
-    --genus 4 \
+    --genus 13 \
     --code-type rt \
     --output-dir "${PROJECT_DIR}/results"
 
