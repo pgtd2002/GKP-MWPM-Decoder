@@ -20,7 +20,7 @@ PROJECT_DIR="/scratch/esemrin/GKP-MWPM-Decoder"
 CONDA_BASE="/scratch/esemrin/miniforge3"
 CONDA_ENV="/scratch/esemrin/gkp-conda"
 SIM_SCRIPT="toric_hpc_param_pravega.py"
-RESULTS_DIR="${PROJECT_DIR}/results_g13_medium170"
+RESULTS_DIR="${PROJECT_DIR}/results_g13_small250"
 
 # ============================================================
 # 2. Validate paths and activate the environment

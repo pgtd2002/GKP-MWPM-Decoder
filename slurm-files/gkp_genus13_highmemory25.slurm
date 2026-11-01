@@ -1,39 +1,46 @@
 #!/bin/bash
-#SBATCH --job-name=gkp_g13_hm25
+#SBATCH --job-name=gkp_g13
 #SBATCH --partition=highmemory
-#SBATCH --account=iisc
 #SBATCH --nodes=25
 #SBATCH --ntasks=25
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=48
-#SBATCH --time=12:00:00
+#SBATCH --time=2:00:00
 #SBATCH --mail-type=BEGIN,END,FAIL
 #SBATCH --mail-user=pgtd2002@gmail.com
-#SBATCH --output=/scratch/esemrin/GKP-MWPM-Decoder/slurm-files/logs/gkp_g13_hm25_%j.out
-#SBATCH --error=/scratch/esemrin/GKP-MWPM-Decoder/slurm-files/logs/gkp_g13_hm25_%j.err
+#SBATCH --output=/scratch/esemrin/GKP-MWPM-Decoder/logs/gkp_%j.out
+#SBATCH --error=/scratch/esemrin/GKP-MWPM-Decoder/logs/gkp_%j.err
 
 set -Eeuo pipefail
 
 # ============================================================
-# 1. Project and environment configuration
+# 1. Project configuration
 # ============================================================
 PROJECT_DIR="/scratch/esemrin/GKP-MWPM-Decoder"
 CONDA_BASE="/scratch/esemrin/miniforge3"
 CONDA_ENV="/scratch/esemrin/gkp-conda"
-SIM_SCRIPT="${PROJECT_DIR}/toric_hpc_param_pravega.py"
-MATRIX_DIR="${PROJECT_DIR}/rt_g13"
-OUTPUT_DIR="${PROJECT_DIR}/results_g13_highmemory25"
+SIM_SCRIPT="toric_hpc_param_pravega.py"
+RESULTS_DIR="${PROJECT_DIR}/results_g13_highmemory25"
 
+# ============================================================
+# 2. Validate paths and activate the environment
+# ============================================================
 cd "${PROJECT_DIR}"
 
-# Slurm opens stdout/stderr before the script starts; create logs/ before sbatch.
-mkdir -p "${PROJECT_DIR}/slurm-files/logs" "${OUTPUT_DIR}"
+if [[ ! -f "${SIM_SCRIPT}" ]]; then
+    echo "ERROR: Simulation script not found: ${PROJECT_DIR}/${SIM_SCRIPT}"
+    exit 1
+fi
+
+if [[ ! -f "${CONDA_BASE}/etc/profile.d/conda.sh" ]]; then
+    echo "ERROR: conda.sh not found under ${CONDA_BASE}"
+    exit 1
+fi
 
 source "${CONDA_BASE}/etc/profile.d/conda.sh"
 conda activate "${CONDA_ENV}"
 
-# Keep one BLAS/OpenMP thread per worker. Python multiprocessing provides
-# the node-level parallelism (48 workers on each allocated node).
+# Prevent nested BLAS/OpenMP threading; each Slurm task launches 48 workers.
 export OMP_NUM_THREADS=1
 export OPENBLAS_NUM_THREADS=1
 export MKL_NUM_THREADS=1
@@ -42,39 +49,37 @@ export NUMEXPR_NUM_THREADS=1
 export PYTHONUNBUFFERED=1
 
 # ============================================================
-# 2. Preflight checks
+# 3. Environment and dependency preflight
 # ============================================================
 echo "============================================================"
-echo "Job ID          : ${SLURM_JOB_ID}"
-echo "Partition       : ${SLURM_JOB_PARTITION}"
-echo "Node list       : ${SLURM_JOB_NODELIST}"
-echo "Tasks           : ${SLURM_NTASKS}"
-echo "CPUs per task   : ${SLURM_CPUS_PER_TASK}"
-echo "Total CPUs      : $((SLURM_NTASKS * SLURM_CPUS_PER_TASK))"
-echo "Start time      : $(date)"
-echo "Working dir     : ${PROJECT_DIR}"
-echo "Python          : $(command -v python)"
+echo "Job ID       : ${SLURM_JOB_ID}"
+echo "Partition    : ${SLURM_JOB_PARTITION}"
+echo "Node list    : ${SLURM_JOB_NODELIST}"
+echo "Nodes        : ${SLURM_JOB_NUM_NODES}"
+echo "Tasks        : ${SLURM_NTASKS}"
+echo "CPUs/task    : ${SLURM_CPUS_PER_TASK}"
+echo "Total CPUs   : $((SLURM_NTASKS * SLURM_CPUS_PER_TASK))"
+echo "Start time   : $(date)"
+echo "Working dir  : ${PROJECT_DIR}"
+echo "Python       : $(command -v python)"
 python --version
-echo "Output dir      : ${OUTPUT_DIR}"
 echo "============================================================"
-
-if [[ ! -f "${SIM_SCRIPT}" ]]; then
-    echo "ERROR: Simulation script not found: ${SIM_SCRIPT}" >&2
-    exit 1
-fi
-
-if [[ ! -d "${MATRIX_DIR}" ]]; then
-    echo "ERROR: Genus-13 matrix directory not found: ${MATRIX_DIR}" >&2
-    exit 1
-fi
 
 python - <<'PY'
 import numpy, scipy, matplotlib, threadpoolctl
-print("Dependency preflight: NumPy, SciPy, Matplotlib, threadpoolctl OK")
+from decoders.pymatching_toric_decoder_2 import GKPSurfaceDecoder
+from functions.binary_stabilizer_generators import import_gen_matrix
+from functions.concatenation import build_css_gkp_rref
+from functions.lattice import Omega_qqpp
+G, Hx, Hz = import_gen_matrix(6, "rt_g13")
+print("Python dependencies and project modules imported successfully.")
+print(f"Genus-13 d=6 input matrices loaded: G={G.shape}, Hx={Hx.shape}, Hz={Hz.shape}")
 PY
 
+mkdir -p "${RESULTS_DIR}"
+
 # ============================================================
-# 3. Run: one Slurm rank per node, 48 local Python workers per rank
+# 4. Run one parent process per node; each parent launches 48 workers
 # ============================================================
 srun \
     --ntasks="${SLURM_NTASKS}" \
@@ -89,9 +94,10 @@ srun \
         --workers "${SLURM_CPUS_PER_TASK}" \
         --genus 13 \
         --code-type rt \
-        --output-dir "${OUTPUT_DIR}"
+        --output-dir "${RESULTS_DIR}"
 
  echo "============================================================"
- echo "Simulation finished successfully."
- echo "End time: $(date)"
- echo "============================================================"
+echo "Simulation finished successfully."
+echo "End time: $(date)"
+echo "Results: ${RESULTS_DIR}"
+echo "============================================================"
