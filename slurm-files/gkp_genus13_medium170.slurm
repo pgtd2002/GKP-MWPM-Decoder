@@ -5,7 +5,7 @@
 #SBATCH --ntasks=170
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=48
-#SBATCH --time=10:00:00
+#SBATCH --time=12:00:00
 #SBATCH --mail-type=BEGIN,END,FAIL
 #SBATCH --mail-user=pgtd2002@gmail.com
 #SBATCH --output=/scratch/esemrin/GKP-MWPM-Decoder/logs/gkp_%j.out
