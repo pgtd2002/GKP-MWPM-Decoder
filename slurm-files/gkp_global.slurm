@@ -27,7 +27,7 @@ SIM_SCRIPT="toric_hpc_param_pravega.py"
 # Simulation parameters
 GENUS=13
 CODE_TYPE="rt"
-SEED=46176376
+SEED=461776
 NUM_TRIALS=100000000
 
 # Automatically generate a separate results directory for each genus
