@@ -1,8 +1,8 @@
 #!/bin/bash
 #SBATCH --job-name=gkp_g13
 #SBATCH --partition=small
-#SBATCH --nodes=250
-#SBATCH --ntasks=250
+#SBATCH --nodes=100
+#SBATCH --ntasks=100
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=48
 #SBATCH --time=1-00:00:00
@@ -27,7 +27,7 @@ SIM_SCRIPT="toric_hpc_param_pravega.py"
 # Simulation parameters
 GENUS=13
 CODE_TYPE="rt"
-SEED=461208376
+SEED=461776
 NUM_TRIALS=100000000
 
 # Automatically generate a separate results directory for each genus
