@@ -1,11 +1,11 @@
 #!/bin/bash
 #SBATCH --job-name=gkp_g13
-#SBATCH --partition=highmemory
-#SBATCH --nodes=25
-#SBATCH --ntasks=25
+#SBATCH --partition=debug
+#SBATCH --nodes=11
+#SBATCH --ntasks=11
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=48
-#SBATCH --time=1-00:00:00
+#SBATCH --time=1:00:00
 #SBATCH --mail-type=BEGIN,END,FAIL
 #SBATCH --mail-user=pgtd2002@gmail.com
 #SBATCH --output=logs/gkp_%j.out
