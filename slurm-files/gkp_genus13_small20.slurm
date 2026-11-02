@@ -1,11 +1,11 @@
 #!/bin/bash
 #SBATCH --job-name=gkp_g13
 #SBATCH --partition=small
-#SBATCH --nodes=22
-#SBATCH --ntasks=22
+#SBATCH --nodes=20
+#SBATCH --ntasks=20
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=48
-#SBATCH --time=1-00:00:00
+#SBATCH --time=12:00:00
 #SBATCH --mail-type=BEGIN,END,FAIL
 #SBATCH --mail-user=pgtd2002@gmail.com
 #SBATCH --output=logs/gkp_%j.out
