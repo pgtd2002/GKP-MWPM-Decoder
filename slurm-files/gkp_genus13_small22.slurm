@@ -1,8 +1,8 @@
 #!/bin/bash
 #SBATCH --job-name=gkp_g13
 #SBATCH --partition=small
-#SBATCH --nodes=100
-#SBATCH --ntasks=100
+#SBATCH --nodes=22
+#SBATCH --ntasks=22
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=48
 #SBATCH --time=1-00:00:00
