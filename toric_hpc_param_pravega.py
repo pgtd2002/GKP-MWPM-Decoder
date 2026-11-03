@@ -322,7 +322,7 @@ def run_trial_chunk(args):
 
 
 # =====================================================================
-# 5. MULTI-NODE TRIAL SHARDING & CHECKPOINTING
+# 5. ELASTIC MULTI-NODE TRIAL SHARDING & CHECKPOINTING
 # =====================================================================
 def split_trials(num_trials, num_chunks):
     num_chunks = max(1, min(num_trials, num_chunks))
@@ -331,15 +331,51 @@ def split_trials(num_trials, num_chunks):
     return [base + (i < remainder) for i in range(num_chunks)]
 
 
+def load_checkpoint(filepath):
+    if os.path.exists(filepath):
+        try:
+            with open(filepath, "rb") as f:
+                return pickle.load(f)
+        except Exception:
+            return None
+    return None
+
+
+def save_checkpoint(state, filepath):
+    temp_file = f"{filepath}.tmp.{os.getpid()}"
+    with open(temp_file, "wb") as f:
+        pickle.dump(state, f)
+    os.replace(temp_file, filepath)
+
+
+def aggregate_existing_shards(shard_dir):
+    """
+    Sums (success_count, trial_count) across ALL shard_*.pkl files in shard_dir,
+    regardless of how many nodes or jobs produced them.
+    """
+    totals = {}
+    for sf in glob.glob(str(Path(shard_dir) / "shard_*.pkl")):
+        data = load_checkpoint(sf)
+        if not data:
+            continue
+        for d, sigma_dict in data.items():
+            if d not in totals:
+                totals[d] = {}
+            for sigma_key, (succ, tot) in sigma_dict.items():
+                prev_succ, prev_tot = totals[d].get(sigma_key, (0, 0))
+                totals[d][sigma_key] = (prev_succ + int(succ), prev_tot + int(tot))
+    return totals
+
+
 def monte_carlo_for_sigma_sharded(
-    executor, sigma, total_trials, base_seed, num_workers, batch_size, rank, world_size
+    executor, sigma, remaining_trials, base_seed, job_id, num_workers, batch_size, rank, world_size
 ):
     """
-    Divides total_trials (e.g. 10^9 or 10^10) evenly across all SLURM nodes.
-    Returns raw (success_count, node_trials) for exact 64-bit integer aggregation.
+    Divides remaining_trials evenly across the CURRENT job's SLURM tasks/nodes.
+    Includes job_id in SeedSequence so resumed runs have 100% independent RNG streams.
     """
-    base_node_trials = total_trials // world_size
-    rem_node_trials = total_trials % world_size
+    base_node_trials = remaining_trials // world_size
+    rem_node_trials = remaining_trials % world_size
     node_trials = base_node_trials + (1 if rank < rem_node_trials else 0)
 
     if node_trials == 0:
@@ -350,8 +386,8 @@ def monte_carlo_for_sigma_sharded(
     actual_chunks = min(num_workers * 4, max_useful_chunks)
     trial_chunks = split_trials(node_trials, actual_chunks)
 
-    # Cryptographically independent RNG streams per (base_seed, node_rank)
-    ss = np.random.SeedSequence([base_seed, rank])
+    # Independent RNG streams per (base_seed, job_id, rank)
+    ss = np.random.SeedSequence([base_seed, job_id, rank])
     child_seeds = ss.spawn(len(trial_chunks))
 
     tasks = [
@@ -363,19 +399,6 @@ def monte_carlo_for_sigma_sharded(
     success_count = sum(executor.map(run_trial_chunk, tasks))
     return int(success_count), int(node_trials)
 
-
-def load_checkpoint(filepath):
-    if os.path.exists(filepath):
-        with open(filepath, "rb") as f:
-            return pickle.load(f)
-    return None
-
-
-def save_checkpoint(state, filepath):
-    temp_file = f"{filepath}.tmp.{os.getpid()}"
-    with open(temp_file, "wb") as f:
-        pickle.dump(state, f)
-    os.replace(temp_file, filepath)
 
 
 # =====================================================================
@@ -487,6 +510,7 @@ def format_duration(seconds):
 def main():
     args = parse_args()
     rank, world_size = get_slurm_topology()
+    job_id = int(os.environ.get("SLURM_JOB_ID", 0))
     distances = list(args.distances)
     sigmas = make_sigmas()
     num_workers = get_server_core_count(args.workers)
@@ -499,19 +523,20 @@ def main():
     os.makedirs(args.output_dir, exist_ok=True)
     shard_dir = Path(args.output_dir) / "shards" / run_id
     shard_dir.mkdir(parents=True, exist_ok=True)
-    my_shard_file = shard_dir / f"shard_rank_{rank:04d}_of_{world_size:04d}.pkl"
 
-    my_shard_data = load_checkpoint(str(my_shard_file))
-    if my_shard_data is not None:
-        if rank == 0:
-            print(f"\n[!] Found shard checkpoint at {my_shard_file}! Resuming progress...\n")
-    else:
-        my_shard_data = {}
+    # 1. Aggregate ALL prior progress from any previous job / node count
+    prior_totals = aggregate_existing_shards(shard_dir)
+
+    # 2. Unique shard file for THIS job & rank (never collides with old runs)
+    my_shard_file = shard_dir / f"shard_job{job_id}_rank_{rank:04d}.pkl"
+    my_shard_data = load_checkpoint(str(my_shard_file)) or {}
 
     if rank == 0:
+        if prior_totals:
+            print(f"\n[!] Found existing shards in {shard_dir}! Resuming elastically across {world_size} task(s)...\n")
         print(
             f"Starting PARAM Pravega {type_label} Genus-{args.genus} simulation across "
-            f"{world_size} node(s) ({world_size * num_workers} physical cores total)."
+            f"{world_size} task(s) ({world_size * num_workers} physical cores total)."
         )
         print(f"Loading matrices from folder pattern: '{folder_prefix}'")
         print(f"Distances: {distances}")
@@ -523,12 +548,27 @@ def main():
             print(f"\n{'=' * 55}")
             print(f"INITIALIZING: {type_label.upper()} GENUS-{args.genus} | DISTANCE d={d}")
 
-        context = prepare_distance_context(d, folder_prefix)
-        batch_size = get_optimal_batch_size(context["dim"], num_workers)
-        gc.collect()  # Release temporary master arrays before forking 48 workers
-
         if d not in my_shard_data:
             my_shard_data[d] = {}
+
+        # Fast-skip distance if all sigmas already met target trials in previous runs
+        all_sigmas_done = True
+        for sigma in sigmas:
+            sigma_key = round(float(sigma), 6)
+            target_trials = get_dynamic_trials(sigma, args.num_trials)
+            done_succ, done_tot = prior_totals.get(d, {}).get(sigma_key, (0, 0))
+            if done_tot < target_trials:
+                all_sigmas_done = False
+                break
+
+        if all_sigmas_done:
+            if rank == 0:
+                print(f"All sigma steps for d={d} already completed in prior shards. Skipping!")
+            continue
+
+        context = prepare_distance_context(d, folder_prefix)
+        batch_size = get_optimal_batch_size(context["dim"], num_workers)
+        gc.collect()
 
         worker_counter = mp.Value("i", 0)
         with ProcessPoolExecutor(
@@ -538,24 +578,25 @@ def main():
         ) as executor:
             for sigma_idx, sigma in enumerate(sigmas):
                 sigma_key = round(float(sigma), 6)
+                target_trials = get_dynamic_trials(sigma, args.num_trials)
+                done_succ, done_tot = prior_totals.get(d, {}).get(sigma_key, (0, 0))
 
-                if sigma_key in my_shard_data[d]:
+                if done_tot >= target_trials:
                     if rank == 0:
-                        succ, tot = my_shard_data[d][sigma_key]
-                        fid = succ / tot if tot > 0 else 0.0
+                        fid = done_succ / done_tot if done_tot > 0 else 0.0
                         print(
                             f"Skipping g={args.genus}({args.code_type}), d={d}, "
-                            f"sigma={sigma:.4f} (Already completed: Node Fid={fid:.8f})"
+                            f"sigma={sigma:.4f} (Completed: {done_tot:,}/{target_trials:,} | Global Fid={fid:.8f})"
                         )
                     continue
 
-                current_trials = get_dynamic_trials(sigma, args.num_trials)
+                remaining_trials = target_trials - done_tot
                 step_seed = args.seed + (d * 10000) + (sigma_idx * 100)
 
                 if rank == 0:
                     print(
                         f"Simulating g={args.genus}({args.code_type}), d={d}, "
-                        f"sigma={sigma:.4f} | Global Trials: {current_trials:,} | "
+                        f"sigma={sigma:.4f} | Remaining Trials: {remaining_trials:,} | "
                         f"Batch: {batch_size}...",
                         end="",
                         flush=True,
@@ -565,8 +606,9 @@ def main():
                 succ, tot = monte_carlo_for_sigma_sharded(
                     executor=executor,
                     sigma=sigma,
-                    total_trials=current_trials,
+                    remaining_trials=remaining_trials,
                     base_seed=step_seed,
+                    job_id=job_id,
                     num_workers=num_workers,
                     batch_size=batch_size,
                     rank=rank,
@@ -574,62 +616,55 @@ def main():
                 )
                 elapsed = time.perf_counter() - t0
 
-                my_shard_data[d][sigma_key] = (succ, tot)
+                prev_s, prev_t = my_shard_data[d].get(sigma_key, (0, 0))
+                my_shard_data[d][sigma_key] = (prev_s + succ, prev_t + tot)
                 save_checkpoint(my_shard_data, str(my_shard_file))
 
                 if rank == 0:
                     local_fid = succ / tot if tot > 0 else 0.0
                     print(
-                        f" -> Node0 Fidelity: {local_fid:.8f} | Time: [{format_duration(elapsed)}]",
+                        f" -> Rank0 Fidelity: {local_fid:.8f} | Time: [{format_duration(elapsed)}]",
                         flush=True,
                     )
 
-        # Free distance context before next distance
         del context
         gc.collect()
+
+    # Mark this rank as finished so Rank 0 knows all tasks in the current job have flushed
+    done_flag = shard_dir / f"done_job{job_id}_rank_{rank:04d}.flag"
+    done_flag.write_text("done")
 
     # =====================================================================
     # 8. RANK 0 FINAL MULTI-NODE SHARD AGGREGATION
     # =====================================================================
     if rank == 0:
         if world_size > 1:
-            print(f"\nWaiting for all {world_size} nodes to flush final shard files...")
+            print(f"\nWaiting for all {world_size} tasks in job {job_id} to finish flushing...")
             while True:
-                shard_files = sorted(
-                    glob.glob(str(shard_dir / f"shard_rank_*_of_{world_size:04d}.pkl"))
-                )
-                if len(shard_files) == world_size:
-                    all_complete = True
-                    loaded_shards = []
-                    for sf in shard_files:
-                        try:
-                            s_data = load_checkpoint(sf)
-                            if not s_data or any(
-                                len(s_data.get(d, {})) < len(sigmas) for d in distances
-                            ):
-                                all_complete = False
-                                break
-                            loaded_shards.append(s_data)
-                        except Exception:
-                            all_complete = False
-                            break
-                    if all_complete:
-                        break
+                done_files = glob.glob(str(shard_dir / f"done_job{job_id}_rank_*.flag"))
+                if len(done_files) >= world_size:
+                    break
                 time.sleep(2)
-        else:
-            loaded_shards = [my_shard_data]
+
+        # Clean up temporary job flags
+        for df in glob.glob(str(shard_dir / f"done_job{job_id}_rank_*.flag")):
+            try:
+                os.remove(df)
+            except OSError:
+                pass
+
+        # Sum ALL shard_*.pkl files across all historical and current runs
+        final_totals = aggregate_existing_shards(shard_dir)
 
         all_fidelities = {}
         for d in distances:
             fids = []
             for sigma in sigmas:
                 sigma_key = round(float(sigma), 6)
-                total_succ = sum(s[d][sigma_key][0] for s in loaded_shards)
-                total_trials = sum(s[d][sigma_key][1] for s in loaded_shards)
+                total_succ, total_trials = final_totals.get(d, {}).get(sigma_key, (0, 0))
                 fids.append(total_succ / total_trials if total_trials > 0 else 0.0)
             all_fidelities[d] = np.array(fids, dtype=np.float64)
 
-        # Save master combined checkpoint & final .npz / .png
         master_ckpt = os.path.join(args.output_dir, f"checkpoint_{run_id}.pkl")
         save_checkpoint(all_fidelities, master_ckpt)
 
