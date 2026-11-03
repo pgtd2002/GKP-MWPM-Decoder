@@ -17,4 +17,5 @@ slurm-files/logs/
 
 *.tmp
 *.log
+scratch.py
 
