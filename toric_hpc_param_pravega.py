@@ -151,12 +151,12 @@ def mod_2pi(x):
 
 def make_sigmas():
     sigmas_low = np.linspace(0.40, 0.52, 4)
-    sigmas_mid = np.linspace(0.52, 0.65, 30)
+    sigmas_mid = np.linspace(0.52, 0.65, 50)
     sigmas_high = np.linspace(0.65, 0.80, 6)
     sigmas_fine = np.arange(0.601, 0.607, 0.001)
     # Uncomment the full curve below if doing a wide sweep instead of threshold hunting:
-    # return np.concatenate([sigmas_low, sigmas_mid, sigmas_high])
-    return sigmas_fine
+    return np.concatenate([sigmas_low, sigmas_mid, sigmas_high])
+    #return sigmas_fine
 
 
 def get_dynamic_trials(sigma, base_trials):
