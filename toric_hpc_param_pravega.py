@@ -166,7 +166,7 @@ def get_dynamic_trials(sigma, base_trials):
     """
     if sigma < 0.52:
         return min(base_trials, 50000)
-    elif sigma > 0.65:
+    elif sigma > 0.6102:
         return min(base_trials, 50000)
     else:
         return base_trials
