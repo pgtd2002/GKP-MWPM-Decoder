@@ -150,12 +150,12 @@ def mod_2pi(x):
 
 
 def make_sigmas():
-    sigmas_low = np.linspace(0.40, 0.52, 4)
-    sigmas_mid = np.linspace(0.52, 0.65, 50)
-    sigmas_high = np.linspace(0.65, 0.80, 6)
+    #sigmas_low = np.linspace(0.40, 0.52, 10)
+    sigmas_mid = np.linspace(0.4, 0.61, 60)
+    sigmas_high = np.linspace(0.61, 0.80, 4)
     sigmas_fine = np.arange(0.601, 0.607, 0.001)
     # Uncomment the full curve below if doing a wide sweep instead of threshold hunting:
-    return np.concatenate([sigmas_low, sigmas_mid, sigmas_high])
+    return np.concatenate([sigmas_mid, sigmas_high])
     #return sigmas_fine
 
 
