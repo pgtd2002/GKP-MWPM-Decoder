@@ -19,7 +19,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pickle
 
-from decoders.pymatching_toric_decoder_2 import GKPSurfaceDecoder
+from decoders.pymatching_toric_decoder import GKPSurfaceDecoder
 from functions.binary_stabilizer_generators import get_rotated_surface_code_matrix
 from functions.concatenation import build_concatenated_gkp_algorithm7
 from functions.lattice import Omega_qqpp

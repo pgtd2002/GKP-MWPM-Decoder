@@ -27,7 +27,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from decoders.pymatching_toric_decoder_2 import GKPSurfaceDecoder
+from decoders.pymatching_toric_decoder import GKPSurfaceDecoder
 from functions.binary_stabilizer_generators import import_gen_matrix
 from functions.concatenation import build_css_gkp_rref
 from functions.lattice import Omega_qqpp
