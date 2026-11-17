@@ -474,7 +474,7 @@ def parse_args():
     parser.add_argument(
         "--num-trials",
         type=int,
-        default=1000000000,
+        default=10000000,
         help="Total Monte Carlo trials per (d, sigma) across all nodes (e.g., 10^9 or 10^10)",
     )
     parser.add_argument("--seed", type=int, default=461266)
@@ -484,15 +484,15 @@ def parse_args():
     parser.add_argument(
         "--genus",
         type=int,
-        default=14,
+        default=2,
         help="Genus of the toric code (e.g., 14, 15, ...)",
     )
     parser.add_argument(
         "--code-type",
         type=str,
-        choices=["rt", "st"],
+        choices=["rt", "st", "rsc"],
         default="rt",
-        help="'rt' for rotated, 'st' for standard",
+        help="'rt' for rotated, 'st' for standard, 'rsc' for rotated-surface code"
     )
     return parser.parse_args()
 
