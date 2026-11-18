@@ -6,7 +6,7 @@ The code supports rotated surface-GKP codes and **multi-genus rotated toric-GKP 
 
 ## How the decoder works
 
-The decoder is a closest-point decoder in the framework of [Lin, Chamberland & Brown, *PRX Quantum* **4**, 040334 (2023)](https://doi.org/10.1103/PRXQuantum.4.040334). For each Monte Carlo trial:
+The decoder is a closest-point decoder in the framework of [Lin, Chamberland & Noh, *PRX Quantum* **4**, 040334 (2023)](https://doi.org/10.1103/PRXQuantum.4.040334). For each Monte Carlo trial:
 
 1. **Noise.** Sample an i.i.d. Gaussian displacement ξ ~ N(0, σ²) on every quadrature of the n GKP modes (code-capacity model, ideal GKP measurements).
 2. **Syndrome.** Compute the continuous GKP syndrome s = (√(2π) M Ωᵀ ξ) mod 2π from the lattice generator matrix M of the concatenated code, then map it to the target vector t.
